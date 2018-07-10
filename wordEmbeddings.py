@@ -86,6 +86,7 @@ print('preparing dataset...')
 data, count, word2Index, index2Word = buildDataset(emma, vocabularySize)
 
 # build and train skip-gram model
+# skip-gram model: http://mccormickml.com/2016/04/19/word2vec-tutorial-the-skip-gram-model/
 print('building model...')
 graph = tf.Graph()
 
@@ -114,7 +115,6 @@ with graph.as_default():
             nceBiases = tf.Variable(tf.zeros([vocabularySize]))
 
     # compute NCE loss using a sample of the negative labels in each batch
-    # NCE loss: http://mccormickml.com/2016/04/19/word2vec-tutorial-the-skip-gram-model/
     with tf.name_scope('loss'):
         loss = tf.reduce_mean(tf.nn.nce_loss(weights=nceWeights, biases=nceBiases, labels=trainLabels, inputs=embeddedInputs, num_sampled=nceSampleSize, num_classes=vocabularySize))
 
