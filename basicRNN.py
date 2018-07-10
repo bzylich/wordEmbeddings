@@ -22,15 +22,15 @@ def buildDataset(words, vocabularySize):
     for i in range(len(words)):
         if words[i] in eosPunctuation and (words[i-1] not in eosExceptions):
             currentSentence.append('<eos>')
+            newWords.append('<eos>')
             sentences.append(currentSentence)
             currentSentence = []
-            newWords.append('<eos>')
         elif i == len(words) - 1:
             currentSentence.append(words[i])
             currentSentence.append('<eos>')
-            sentences.append(currentSentence)
             newWords.append(words[i])
             newWords.append('<eos>')
+            sentences.append(currentSentence)
         elif words[i] == ']' and inBrackets:
             inBrackets = False
             removedPhrase.append(']')
@@ -82,7 +82,44 @@ def buildDataset(words, vocabularySize):
         data.append(index)
     count[0] = ('<Unknown>', unknownCount)
     index2Word = dict(zip(word2Index.values(), word2Index.keys()))
+
+    eosIndex = word2Index['<eos>']
+    trainData = []
+    validationData = []
+    testData = []
+    currentSentence = []
+    for i in data:
+        if i == eosIndex:
+            currentSentence.append(i)
+            # randomly add to train, validation, or test dataset
+            prob = np.random.rand()
+            if prob < .7:
+                trainData.extend(currentSentence)
+            elif prob < .8:
+                validationData.extend(currentSentence)
+            else:
+                testData.extend(currentSentence)
+            currentSentence = []
+        else:
+            currentSentence.append(i)
+    # print('test size:', len(trainData), 'validation size:', len(validationData), 'test size:', len(testData))
     return trainData, validationData, testData, index2Word
+
+def generateBatch(data, batchSize, numSteps):
+    data = tf.convert_to_tensor(data, name="data", dtype=tf.int32)
+
+    dataLength = tf.size(data)
+    batchLength = dataLength // batchSize
+    data = tf.reshape(data[0: batchSize * batchLength], [batchSize, batchLength])
+
+    epochSize = (batchLength - 1) // numSteps
+
+    i = tf.train.range_input_producer(epochSize, shuffle=False).dequeue()
+    x = data[:, i * numSteps : (i + 1) * numSteps]
+    x.set_shape([batchSize, numSteps])
+    y = data[:, i * numSteps + 1 : (i + 1) * numSteps + 1]
+    y.set_shape([batchSize, numSteps])
+    return x, y
 
 class Input(object):
 
@@ -94,7 +131,7 @@ class Input(object):
 
 class LanguageModel(object):
 
-    def __init__(self, input, isTraining, hiddenSize, vocabularySize, numLayers, dropout=0.5, initScale=0.05):
+    def __init__(self, input, isTraining, hiddenSize, vocabularySize, numLayers, dropout=0.5, initScale=0.05, maxGradientNorm=5):
         self.isTraining = isTraining
         self.input = input
         self.batchSize = input.batchSize
@@ -159,13 +196,13 @@ class LanguageModel(object):
     def assignLearningRate(self, session, lr):
         session.run(self.lr_update, feed_dict={self.new_lr: lr})
 
-def train(trainData, vocabularySize, numLayers, numEpochs, batchSize, modelSaveName, lr=1.0, maxLREpoch=10, lrDecay=0.93, printIterations=50):
+def train(trainData, vocabularySize, numLayers, numEpochs, batchSize, modelSaveName, learningRate=1.0, maxLREpoch=10, lrDecay=0.93, printIterations=50):
     trainInput = Input(batchSize=batchSize, numSteps=35, data=trainData)
-    trainModel = Model(trainInput, isTraining=True, hiddenSize=650, vocabularySize=vocabularySize, numLayers=numLayers)
+    trainModel = LanguageModel(trainInput, isTraining=True, hiddenSize=650, vocabularySize=vocabularySize, numLayers=numLayers)
     initOp = tf.global_variables_initializer()
     initialDecay = lrDecay
     with tf.Session() as session:
-        sess.run([initOp])
+        session.run([initOp])
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(coord=coord)
         saver = tf.train.Saver()
@@ -179,9 +216,9 @@ def train(trainData, vocabularySize, numLayers, numEpochs, batchSize, modelSaveN
                 if step % printIterations != 0:
                     cost, _, currentState = session.run([trainModel.cost, trainModel.trainOp, trainModel.state], feed_dict={trainModel.initState: currentState})
                 else:
-                    seconds = (float((dt.datetime.now() - currentTime).seconds()) / printIterations)
+                    seconds = (float((dt.datetime.now() - currentTime).seconds) / printIterations)
                     currentTime = dt.datetime.now()
-                    cost, _, currentState, accuracy = session.run([trainModel.cost, trainModel.trainOp, trainModel.state, trainmodel.accuracy], feed_dict={trainModel.initState: currentState})
+                    cost, _, currentState, accuracy = session.run([trainModel.cost, trainModel.trainOp, trainModel.state, trainModel.accuracy], feed_dict={trainModel.initState: currentState})
                     print("Epoch", epoch, "Step", step, "cost:", cost, "accuracy:", accuracy, "seconds per step:", seconds)
 
             # save checkpoint
@@ -193,7 +230,7 @@ def train(trainData, vocabularySize, numLayers, numEpochs, batchSize, modelSaveN
 
 def test(modelPath, testData, index2Word):
     testInput = Input(batchSize=20, numSteps=35, data=testData)
-    testModel = Model(testInput, isTraining=False, hiddenSize=650, vocabularySize=len(index2Word), numLayers=2)
+    testModel = LanguageModel(testInput, isTraining=False, hiddenSize=650, vocabularySize=len(index2Word), numLayers=2)
     saver = tf.train.Saver()
 
     with tf.Session() as session:
@@ -235,7 +272,7 @@ if __name__ == "__main__":
     #
     # # train
     #
-    # train(trainData, vocabularySize, numLayers=2, numEpochs=60, batchSize=20, modelSaveName='two-layer-lstm-60-epoch')
+    train(trainData, vocabularySize, numLayers=2, numEpochs=60, batchSize=20, modelSaveName='two-layer-lstm-60-epoch')
     #
     # # test
     #
