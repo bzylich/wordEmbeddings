@@ -6,11 +6,12 @@ import datetime as dt
 import nltk
 
 # code based on: https://github.com/adventuresinML/adventures-in-ml-code/blob/master/lstm_tutorial.py
+# followed tutorial found here: http://adventuresinmachinelearning.com/recurrent-neural-networks-lstm-tutorial-tensorflow/
 
 def buildDataset(words, vocabularySize):
     # preprocess the text to break up sentences and remove book structure information
     newWords = []
-    eosExceptions = ['Mr', 'Mrs', 'Ms', 'PhD']
+    eosExceptions = ['Mr', 'Mrs', 'Ms', 'PhD', 'Dr', 'Rd', 'St']
     bookStructure = ['VOLUME', 'CHAPTER']
     eosPunctuation = ['.']#, '!', '?']
     # construct sentences
